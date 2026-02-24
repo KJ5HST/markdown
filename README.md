@@ -1,12 +1,8 @@
-<p align="center">
-  <img src="AppIcon.iconset/icon_256x256.png" width="128" height="128" alt="Mark Down app icon">
-</p>
+![Mark Down](AppIcon.iconset/icon_32x32.png)
 
-<h1 align="center">Mark Down</h1>
+# Mark Down
 
-<p align="center">
-  A native macOS markdown editor with live WYSIWYG preview and customizable styling.
-</p>
+A native macOS markdown editor with live WYSIWYG preview and customizable styling.
 
 ## Features
 

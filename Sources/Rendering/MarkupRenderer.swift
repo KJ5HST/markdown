@@ -60,7 +60,8 @@ struct MarkupRenderer {
                         return StyledBlock(
                             elementType: .image, style: style,
                             content: .image(source: img.source ?? "", alt: alt),
-                            sourcePosition: pos
+                            sourcePosition: pos,
+                            generation: generation
                         )
                     }
                 }

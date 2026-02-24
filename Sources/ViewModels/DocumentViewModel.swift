@@ -580,7 +580,8 @@ class DocumentViewModel: ObservableObject {
                 blocks: pageBlocks,
                 stylesheet: stylesheet,
                 pageSize: CGSize(width: pageSize.width, height: pageSize.height),
-                margin: exportMargin
+                margin: exportMargin,
+                documentURL: document.fileURL
             )
             let hostingView = NSHostingView(rootView: pageView)
             hostingView.frame = NSRect(origin: .zero, size: pageSize)
@@ -648,7 +649,7 @@ class DocumentViewModel: ObservableObject {
     /// Measure the rendered height of a single block at the given width,
     /// using a real off-screen window so the NSTextView inside sizeThatFits properly.
     private func measureBlockHeight(_ block: StyledBlock, contentWidth: CGFloat, window: NSWindow) -> CGFloat {
-        let view = StaticRenderedElementView(block: block, stylesheet: stylesheet)
+        let view = StaticRenderedElementView(block: block, stylesheet: stylesheet, documentURL: document.fileURL)
             .frame(width: contentWidth)
         let hostingView = NSHostingView(rootView: view)
         hostingView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: 10000)

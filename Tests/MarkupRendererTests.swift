@@ -205,4 +205,17 @@ struct MarkupRendererTests {
             Issue.record("Expected table content")
         }
     }
+
+    @Test("Renders image")
+    func testImage() {
+        let blocks = renderer.render(source: "![Mark Down](AppIcon.iconset/icon_256x256.png)")
+        #expect(blocks.count == 1)
+        #expect(blocks[0].elementType == .image)
+        if case .image(let source, let alt) = blocks[0].content {
+            #expect(source == "AppIcon.iconset/icon_256x256.png")
+            #expect(alt == "Mark Down")
+        } else {
+            Issue.record("Expected image content, got \(blocks[0].content)")
+        }
+    }
 }

@@ -208,33 +208,81 @@ struct RenderedElementView: View {
 
     // MARK: - Image
 
-    private func imageView(source: String, alt: String) -> some View {
-        VStack {
-            if let url = URL(string: source) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .cornerRadius(block.style.cornerRadius ?? 0)
-                    case .failure:
-                        Label(alt.isEmpty ? "Image failed to load" : alt, systemImage: "photo")
-                            .foregroundColor(.secondary)
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-                .frame(maxHeight: 400)
-            } else {
-                Label(alt.isEmpty ? "Invalid image URL" : alt, systemImage: "photo")
-                    .foregroundColor(.secondary)
+    /// Resolve an image source string to a URL, handling both absolute URLs and
+    /// paths relative to the current document's directory.
+    private func resolveImageURL(_ source: String) -> URL? {
+        // Absolute URL (https://, http://, file://)
+        if let url = URL(string: source), url.scheme != nil {
+            return url
+        }
+        // Relative path — resolve against the document's directory
+        if let fileURL = documentVM.document.fileURL {
+            let dir = fileURL.deletingLastPathComponent().path
+            let resolvedPath = (dir as NSString).appendingPathComponent(source)
+            if FileManager.default.fileExists(atPath: resolvedPath) {
+                return URL(fileURLWithPath: resolvedPath)
             }
+        }
+        // Fallback: try relative to the current working directory
+        let cwdPath = (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(source)
+        if FileManager.default.fileExists(atPath: cwdPath) {
+            return URL(fileURLWithPath: cwdPath)
+        }
+        return nil
+    }
+
+    private func imageView(source: String, alt: String) -> some View {
+        LocalImageView(
+            url: resolveImageURL(source),
+            alt: alt,
+            cornerRadius: block.style.cornerRadius ?? 0
+        )
+    }
+}
+
+/// Loads local images synchronously (fast for file URLs) and uses AsyncImage for remote URLs
+private struct LocalImageView: View {
+    let url: URL?
+    let alt: String
+    let cornerRadius: CGFloat
+
+    var body: some View {
+        if let url = url, url.isFileURL, let nsImage = NSImage(contentsOf: url) {
+            let size = nsImage.size
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(maxWidth: size.width, maxHeight: min(size.height, 400))
+                .cornerRadius(cornerRadius)
+        } else if let url = url, !url.isFileURL {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .cornerRadius(cornerRadius)
+                case .failure:
+                    failureLabel
+                case .empty:
+                    ProgressView()
+                @unknown default:
+                    EmptyView()
+                }
+            }
+            .frame(maxHeight: 400)
+        } else {
+            failureLabel
         }
     }
 
+    private var failureLabel: some View {
+        Label(alt.isEmpty ? "Image failed to load" : alt, systemImage: "photo")
+            .foregroundColor(.secondary)
+    }
+}
+
+private extension RenderedElementView {
     // MARK: - Table
 
     private func tableView(header: [StyledTableCell], rows: [[StyledTableCell]]) -> some View {
@@ -298,12 +346,11 @@ struct RenderedElementView: View {
     // MARK: - Background & Hover
 
     @ViewBuilder
-    private var backgroundView: some View {
+    var backgroundView: some View {
         // Containers handle their own background in childrenView
         if !isContainer, let bgColor = block.style.backgroundColor {
             RoundedRectangle(cornerRadius: block.style.cornerRadius ?? 0)
                 .fill(bgColor.color)
         }
     }
-
 }

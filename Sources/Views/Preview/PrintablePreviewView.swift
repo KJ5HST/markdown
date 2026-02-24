@@ -94,6 +94,7 @@ struct PrintablePageView: View {
     let stylesheet: StyleSheet
     let pageSize: CGSize
     let margin: CGFloat
+    var documentURL: URL? = nil
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -102,7 +103,7 @@ struct PrintablePageView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(blocks) { block in
-                    StaticRenderedElementView(block: block, stylesheet: stylesheet)
+                    StaticRenderedElementView(block: block, stylesheet: stylesheet, documentURL: documentURL)
                 }
                 Spacer(minLength: 0)
             }
@@ -142,6 +143,7 @@ struct PrintableDocumentView: View {
 struct StaticRenderedElementView: View {
     let block: StyledBlock
     let stylesheet: StyleSheet
+    var documentURL: URL? = nil
 
     var body: some View {
         blockContent
@@ -206,7 +208,7 @@ struct StaticRenderedElementView: View {
     private func childrenView(_ children: [StyledBlock]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(children) { child in
-                StaticRenderedElementView(block: child, stylesheet: stylesheet)
+                StaticRenderedElementView(block: child, stylesheet: stylesheet, documentURL: documentURL)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -247,7 +249,7 @@ struct StaticRenderedElementView: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(children) { child in
-                    StaticRenderedElementView(block: child, stylesheet: stylesheet)
+                    StaticRenderedElementView(block: child, stylesheet: stylesheet, documentURL: documentURL)
                 }
             }
         }
@@ -289,26 +291,57 @@ struct StaticRenderedElementView: View {
 
     // MARK: - Image
 
+    private func resolveImageURL(_ source: String) -> URL? {
+        if let url = URL(string: source), url.scheme != nil {
+            return url
+        }
+        if let fileURL = documentURL {
+            let dir = fileURL.deletingLastPathComponent().path
+            let resolvedPath = (dir as NSString).appendingPathComponent(source)
+            if FileManager.default.fileExists(atPath: resolvedPath) {
+                return URL(fileURLWithPath: resolvedPath)
+            }
+        }
+        let cwdPath = (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent(source)
+        if FileManager.default.fileExists(atPath: cwdPath) {
+            return URL(fileURLWithPath: cwdPath)
+        }
+        return nil
+    }
+
     private func imageView(source: String, alt: String) -> some View {
         VStack {
-            if let url = URL(string: source) {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image
+            if let url = resolveImageURL(source) {
+                if url.isFileURL {
+                    if let nsImage = NSImage(contentsOf: url) {
+                        Image(nsImage: nsImage)
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .cornerRadius(block.style.cornerRadius ?? 0)
-                    case .failure:
+                            .frame(maxHeight: 400)
+                    } else {
                         staticText(alt.isEmpty ? "Image failed to load" : alt,
                                    font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
-                    case .empty:
-                        ProgressView()
-                    @unknown default:
-                        EmptyView()
                     }
+                } else {
+                    AsyncImage(url: url) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .cornerRadius(block.style.cornerRadius ?? 0)
+                        case .failure:
+                            staticText(alt.isEmpty ? "Image failed to load" : alt,
+                                       font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+                        case .empty:
+                            ProgressView()
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(maxHeight: 400)
                 }
-                .frame(maxHeight: 400)
             } else {
                 staticText(alt.isEmpty ? "Invalid image URL" : alt,
                            font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
