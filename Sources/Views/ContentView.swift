@@ -1,11 +1,17 @@
 import SwiftUI
 import AppKit
 
+enum ScrollPane {
+    case source, preview
+}
+
 struct ContentView: View {
     @EnvironmentObject var documentVM: DocumentViewModel
     @State private var editorFraction: CGFloat = 0.0
     @State private var lastManualFraction: CGFloat = 0.5
     @State private var dividerHovered = false
+    @State private var scrollFraction: CGFloat = 0
+    @State private var activeScrollPane: ScrollPane = .preview
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,9 +25,15 @@ struct ContentView: View {
                 let previewHeight = max(10, totalHeight - editorHeight - dividerHeight)
 
                 VStack(spacing: 0) {
-                    MarkdownPreviewView()
+                    MarkdownPreviewView(
+                        isActivePane: activeScrollPane == .preview,
+                        scrollFraction: $scrollFraction
+                    )
                         .environmentObject(documentVM)
                         .frame(height: previewHeight)
+                        .onHover { hovering in
+                            if hovering { activeScrollPane = .preview }
+                        }
 
                 // Draggable divider
                 ZStack {
@@ -61,8 +73,15 @@ struct ContentView: View {
                         }
                 )
 
-                MarkdownEditorView(source: $documentVM.sourceText)
+                MarkdownEditorView(
+                    source: $documentVM.sourceText,
+                    isActivePane: activeScrollPane == .source,
+                    scrollFraction: $scrollFraction
+                )
                     .frame(height: editorHeight)
+                    .onHover { hovering in
+                        if hovering { activeScrollPane = .source }
+                    }
                 }
             }
         }

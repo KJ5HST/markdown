@@ -1,8 +1,10 @@
 import SwiftUI
 
-/// Monospaced text editor for markdown source
+/// Monospaced text editor for markdown source with scroll sync support
 struct MarkdownEditorView: View {
     @Binding var source: String
+    var isActivePane: Bool
+    @Binding var scrollFraction: CGFloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -16,10 +18,12 @@ struct MarkdownEditorView: View {
             }
             .background(Color(nsColor: .windowBackgroundColor))
 
-            TextEditor(text: $source)
-                .font(.system(size: 13, design: .monospaced))
-                .scrollContentBackground(.visible)
-                .padding(4)
+            SourceTextView(
+                text: $source,
+                isActivePane: isActivePane,
+                scrollFraction: $scrollFraction
+            )
+            .padding(4)
         }
     }
 }
