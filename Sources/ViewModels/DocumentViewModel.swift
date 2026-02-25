@@ -32,6 +32,8 @@ class DocumentViewModel: ObservableObject {
     @Published var renderVersion: Int = 0
     @Published var saveError: String?
     @Published var sourceVisible: Bool = false
+    /// Set to a heading anchor slug to trigger programmatic scroll in the preview
+    @Published var scrollToAnchor: String?
     @Published var editingBlockId: String? {
         didSet {
             // Cancel any deferred rerender from finishEditing — a new block took focus
@@ -427,6 +429,26 @@ class DocumentViewModel: ObservableObject {
         suppressRerender = false
         document.isDirty = false
         rerender()
+    }
+
+    // MARK: - Anchor Navigation
+
+    /// Look up the block ID for a given heading anchor slug
+    func blockId(forAnchor anchor: String) -> String? {
+        return findBlockByAnchor(anchor, in: styledBlocks)
+    }
+
+    private func findBlockByAnchor(_ anchor: String, in blocks: [StyledBlock]) -> String? {
+        for block in blocks {
+            if block.anchor == anchor { return block.id }
+            switch block.content {
+            case .children(let children), .listItem(_, let children):
+                if let found = findBlockByAnchor(anchor, in: children) { return found }
+            default:
+                break
+            }
+        }
+        return nil
     }
 
     // MARK: - Block Navigation

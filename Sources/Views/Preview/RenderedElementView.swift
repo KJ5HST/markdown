@@ -69,7 +69,8 @@ struct RenderedElementView: View {
                 documentVM.updateSelectionSyntaxStack(from: textView)
             },
             onNavigateUp: { documentVM.navigateToPreviousBlock(from: block.id) },
-            onNavigateDown: { documentVM.navigateToNextBlock(from: block.id) }
+            onNavigateDown: { documentVM.navigateToNextBlock(from: block.id) },
+            onAnchorTap: { anchor in documentVM.scrollToAnchor = anchor }
         )
     }
 
@@ -331,7 +332,8 @@ private extension RenderedElementView {
             onBlur: { documentVM.finishEditingCell() },
             onSelectionChange: { textView in
                 documentVM.updateSelectionSyntaxStack(from: textView)
-            }
+            },
+            onAnchorTap: { anchor in documentVM.scrollToAnchor = anchor }
         )
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(EdgeInsets(

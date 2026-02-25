@@ -16,8 +16,10 @@ struct StyledBlock: Identifiable {
     let style: ElementStyle
     let content: BlockContent
     let sourcePosition: SourcePosition?
+    /// URL-fragment anchor for heading blocks (e.g. "getting-started")
+    let anchor: String?
 
-    init(elementType: MarkupElementType, style: ElementStyle, content: BlockContent, sourcePosition: SourcePosition?, generation: Int = 0) {
+    init(elementType: MarkupElementType, style: ElementStyle, content: BlockContent, sourcePosition: SourcePosition?, generation: Int = 0, anchor: String? = nil) {
         if let pos = sourcePosition {
             self.id = "\(elementType.rawValue)-\(pos.startLine)-\(pos.startColumn)-g\(generation)"
         } else {
@@ -27,6 +29,7 @@ struct StyledBlock: Identifiable {
         self.style = style
         self.content = content
         self.sourcePosition = sourcePosition
+        self.anchor = anchor
     }
 
     enum BlockContent {

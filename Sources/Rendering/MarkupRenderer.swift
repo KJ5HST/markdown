@@ -10,19 +10,21 @@ struct MarkupRenderer {
     func render(source: String) -> [StyledBlock] {
         let document = Document(parsing: source)
         let inlineRenderer = InlineRenderer(stylesheet: stylesheet)
-        return renderBlock(document, inlineRenderer: inlineRenderer, insideListItem: false)
+        let anchorTracker = AnchorTracker()
+        return renderBlock(document, inlineRenderer: inlineRenderer, insideListItem: false, anchorTracker: anchorTracker)
     }
 
     func render(document: Document) -> [StyledBlock] {
         let inlineRenderer = InlineRenderer(stylesheet: stylesheet)
-        return renderBlock(document, inlineRenderer: inlineRenderer, insideListItem: false)
+        let anchorTracker = AnchorTracker()
+        return renderBlock(document, inlineRenderer: inlineRenderer, insideListItem: false, anchorTracker: anchorTracker)
     }
 
-    private func renderBlock(_ node: Markup, inlineRenderer: InlineRenderer, insideListItem: Bool) -> [StyledBlock] {
+    private func renderBlock(_ node: Markup, inlineRenderer: InlineRenderer, insideListItem: Bool, anchorTracker: AnchorTracker) -> [StyledBlock] {
         var blocks: [StyledBlock] = []
 
         for child in node.children {
-            if let block = renderSingleBlock(child, inlineRenderer: inlineRenderer, insideListItem: insideListItem) {
+            if let block = renderSingleBlock(child, inlineRenderer: inlineRenderer, insideListItem: insideListItem, anchorTracker: anchorTracker) {
                 blocks.append(block)
             }
         }
@@ -40,7 +42,7 @@ struct MarkupRenderer {
         )
     }
 
-    private func renderSingleBlock(_ node: Markup, inlineRenderer: InlineRenderer, insideListItem: Bool) -> StyledBlock? {
+    private func renderSingleBlock(_ node: Markup, inlineRenderer: InlineRenderer, insideListItem: Bool, anchorTracker: AnchorTracker) -> StyledBlock? {
         let pos = sourcePosition(from: node)
 
         switch node {
@@ -48,7 +50,9 @@ struct MarkupRenderer {
             let elementType = headingType(level: heading.level)
             let style = stylesheet.resolvedStyle(for: elementType)
             let runs = inlineRenderer.renderInlines(heading.children, parentStyle: style)
-            return StyledBlock(elementType: elementType, style: style, content: .inline(runs), sourcePosition: pos, generation: generation)
+            let slug = Self.generateSlug(from: Self.plainText(from: heading))
+            let anchor = anchorTracker.unique(slug)
+            return StyledBlock(elementType: elementType, style: style, content: .inline(runs), sourcePosition: pos, generation: generation, anchor: anchor)
 
         case let paragraph as Markdown.Paragraph:
             // Check if paragraph contains a single image
@@ -76,7 +80,7 @@ struct MarkupRenderer {
 
         case let blockQuote as Markdown.BlockQuote:
             let style = stylesheet.resolvedStyle(for: .blockQuote)
-            let children = renderBlock(blockQuote, inlineRenderer: inlineRenderer, insideListItem: false)
+            let children = renderBlock(blockQuote, inlineRenderer: inlineRenderer, insideListItem: false, anchorTracker: anchorTracker)
             return StyledBlock(elementType: .blockQuote, style: style, content: .children(children), sourcePosition: pos, generation: generation)
 
         case let codeBlock as Markdown.CodeBlock:
@@ -93,7 +97,7 @@ struct MarkupRenderer {
             for (index, item) in orderedList.children.enumerated() {
                 if let listItem = item as? Markdown.ListItem {
                     let itemStyle = stylesheet.resolvedStyle(for: .listItem)
-                    let itemChildren = renderBlock(listItem, inlineRenderer: inlineRenderer, insideListItem: true)
+                    let itemChildren = renderBlock(listItem, inlineRenderer: inlineRenderer, insideListItem: true, anchorTracker: anchorTracker)
                     let marker: String
                     if let checkbox = listItem.checkbox {
                         marker = checkbox == .checked ? "☑" : "☐"
@@ -116,7 +120,7 @@ struct MarkupRenderer {
             for item in unorderedList.children {
                 if let listItem = item as? Markdown.ListItem {
                     let itemStyle = stylesheet.resolvedStyle(for: .listItem)
-                    let itemChildren = renderBlock(listItem, inlineRenderer: inlineRenderer, insideListItem: true)
+                    let itemChildren = renderBlock(listItem, inlineRenderer: inlineRenderer, insideListItem: true, anchorTracker: anchorTracker)
                     let marker: String
                     if let checkbox = listItem.checkbox {
                         marker = checkbox == .checked ? "☑" : "☐"
@@ -200,5 +204,46 @@ struct MarkupRenderer {
         case 6: return .heading6
         default: return .heading1
         }
+    }
+
+    // MARK: - Anchor Slug Generation
+
+    /// Extract plain text from a markup node by recursively collecting text children
+    static func plainText(from node: Markup) -> String {
+        var result = ""
+        for child in node.children {
+            if let text = child as? Markdown.Text {
+                result += text.string
+            } else if child is Markdown.SoftBreak || child is Markdown.LineBreak {
+                result += " "
+            } else {
+                result += plainText(from: child)
+            }
+        }
+        return result
+    }
+
+    /// Generate a GitHub-style anchor slug from heading text
+    static func generateSlug(from text: String) -> String {
+        var slug = text.lowercased()
+        // Remove anything that isn't a letter, number, space, or hyphen
+        slug = slug.unicodeScalars.filter {
+            CharacterSet.alphanumerics.contains($0) || $0 == " " || $0 == "-"
+        }.map { String($0) }.joined()
+        // Replace spaces with hyphens
+        slug = slug.replacingOccurrences(of: " ", with: "-")
+        return slug
+    }
+}
+
+/// Tracks heading anchors to ensure uniqueness (appends -1, -2, etc. for duplicates)
+private class AnchorTracker {
+    private var seen: [String: Int] = [:]
+
+    func unique(_ slug: String) -> String {
+        guard !slug.isEmpty else { return slug }
+        let count = seen[slug, default: 0]
+        seen[slug] = count + 1
+        return count == 0 ? slug : "\(slug)-\(count)"
     }
 }

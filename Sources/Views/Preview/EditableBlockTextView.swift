@@ -13,6 +13,7 @@ struct EditableBlockTextView: NSViewRepresentable {
     let onSelectionChange: ((EditableNSTextView) -> Void)?
     let onNavigateUp: (() -> Void)?
     let onNavigateDown: (() -> Void)?
+    let onAnchorTap: ((String) -> Void)?
 
     init(
         attributedText: NSAttributedString,
@@ -23,7 +24,8 @@ struct EditableBlockTextView: NSViewRepresentable {
         onBlur: @escaping () -> Void = {},
         onSelectionChange: ((EditableNSTextView) -> Void)? = nil,
         onNavigateUp: (() -> Void)? = nil,
-        onNavigateDown: (() -> Void)? = nil
+        onNavigateDown: (() -> Void)? = nil,
+        onAnchorTap: ((String) -> Void)? = nil
     ) {
         self.attributedText = attributedText
         self.isCodeBlock = isCodeBlock
@@ -34,6 +36,7 @@ struct EditableBlockTextView: NSViewRepresentable {
         self.onSelectionChange = onSelectionChange
         self.onNavigateUp = onNavigateUp
         self.onNavigateDown = onNavigateDown
+        self.onAnchorTap = onAnchorTap
     }
 
     func makeCoordinator() -> Coordinator {
@@ -73,6 +76,7 @@ struct EditableBlockTextView: NSViewRepresentable {
             guard let textView = textView else { return }
             coordinator?.handleFocusGained(textView: textView)
         }
+        textView.onAnchorTap = onAnchorTap
         context.coordinator.isUpdatingFromSwiftUI = true
         textView.textStorage?.setAttributedString(attributedText)
         context.coordinator.isUpdatingFromSwiftUI = false
@@ -309,6 +313,8 @@ class EditableNSTextView: NSTextView {
     var isCodeBlock = false
     var blockId: String?
     var onBecomeFirstResponder: (() -> Void)?
+    /// Called when user clicks a fragment link (e.g. #heading-slug)
+    var onAnchorTap: ((String) -> Void)?
     /// Set by toggleInlineFormatting to prevent stale updateNSView from overwriting inline format changes
     var hasInlineFormatChanges = false
 
@@ -370,10 +376,17 @@ class EditableNSTextView: NSTextView {
         // Check if clicking on a link
         let point = convert(event.locationInWindow, from: nil)
         if let charIndex = characterIndex(at: point),
-           let dest = textStorage?.attribute(.linkDestination, at: charIndex, effectiveRange: nil) as? String,
-           let url = URL(string: dest) {
-            NSWorkspace.shared.open(url)
-            return
+           let dest = textStorage?.attribute(.linkDestination, at: charIndex, effectiveRange: nil) as? String {
+            // Fragment-only link (e.g. #overview) — scroll to heading anchor
+            if dest.hasPrefix("#") {
+                let anchor = String(dest.dropFirst())
+                onAnchorTap?(anchor)
+                return
+            }
+            if let url = URL(string: dest) {
+                NSWorkspace.shared.open(url)
+                return
+            }
         }
 
         // Explicitly claim first responder so clicks reliably transfer focus
