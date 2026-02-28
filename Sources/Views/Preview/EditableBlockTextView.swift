@@ -14,6 +14,7 @@ struct EditableBlockTextView: NSViewRepresentable {
     let onNavigateUp: (() -> Void)?
     let onNavigateDown: (() -> Void)?
     let onAnchorTap: ((String) -> Void)?
+    let highlightRanges: [(range: NSRange, isCurrent: Bool)]
 
     init(
         attributedText: NSAttributedString,
@@ -25,7 +26,8 @@ struct EditableBlockTextView: NSViewRepresentable {
         onSelectionChange: ((EditableNSTextView) -> Void)? = nil,
         onNavigateUp: (() -> Void)? = nil,
         onNavigateDown: (() -> Void)? = nil,
-        onAnchorTap: ((String) -> Void)? = nil
+        onAnchorTap: ((String) -> Void)? = nil,
+        highlightRanges: [(range: NSRange, isCurrent: Bool)] = []
     ) {
         self.attributedText = attributedText
         self.isCodeBlock = isCodeBlock
@@ -37,6 +39,7 @@ struct EditableBlockTextView: NSViewRepresentable {
         self.onNavigateUp = onNavigateUp
         self.onNavigateDown = onNavigateDown
         self.onAnchorTap = onAnchorTap
+        self.highlightRanges = highlightRanges
     }
 
     func makeCoordinator() -> Coordinator {
@@ -104,6 +107,7 @@ struct EditableBlockTextView: NSViewRepresentable {
         if currentText == incomingText {
             // If inline formatting was applied, don't overwrite with stale block-level styles
             if textView.hasInlineFormatChanges {
+                applySearchHighlights(to: textView, coordinator: context.coordinator)
                 return
             }
             // Same text, possibly new styles — safe to apply (preserves cursor)
@@ -122,12 +126,14 @@ struct EditableBlockTextView: NSViewRepresentable {
         } else if context.coordinator.isEditing {
             // If inline formatting was applied, don't overwrite with stale block-level styles
             if textView.hasInlineFormatChanges {
+                applySearchHighlights(to: textView, coordinator: context.coordinator)
                 return
             }
             // Text differs while editing — don't overwrite text, but DO apply
             // style attributes (paragraph style, font, color) to the existing text.
             // This ensures style changes (e.g., line spacing) take effect immediately.
             applyStyleAttributes(from: attributedText, to: textView, coordinator: context.coordinator)
+            applySearchHighlights(to: textView, coordinator: context.coordinator)
             return
         } else if !context.coordinator.hasPendingEdits {
             // Text differs but no pending edits — genuine external content update
@@ -141,6 +147,8 @@ struct EditableBlockTextView: NSViewRepresentable {
             textView.invalidateIntrinsicContentSize()
         }
         // If text differs AND hasPendingEdits: skip — stale data, waiting for rerender
+
+        applySearchHighlights(to: textView, coordinator: context.coordinator)
     }
 
     /// Apply style attributes (paragraph style, font, colors) from the incoming attributed
@@ -173,6 +181,28 @@ struct EditableBlockTextView: NSViewRepresentable {
         let index = min(textView.selectedRange().location, attributedText.length - 1)
         let attrs = attributedText.attributes(at: max(index, 0), effectiveRange: nil)
         textView.typingAttributes = attrs
+    }
+
+    /// Apply search highlight backgrounds to matching ranges
+    private func applySearchHighlights(to textView: NSTextView, coordinator: Coordinator) {
+        guard let textStorage = textView.textStorage else { return }
+        let fullRange = NSRange(location: 0, length: textStorage.length)
+
+        coordinator.isUpdatingFromSwiftUI = true
+        textStorage.beginEditing()
+        // Clear existing search highlights
+        textStorage.removeAttribute(.backgroundColor, range: fullRange)
+        // Apply new highlights
+        for highlight in highlightRanges {
+            guard highlight.range.location + highlight.range.length <= textStorage.length else { continue }
+            let color: NSColor = highlight.isCurrent
+                ? NSColor.systemYellow
+                : NSColor.systemYellow.withAlphaComponent(0.3)
+            textStorage.addAttribute(.backgroundColor, value: color, range: highlight.range)
+        }
+        textStorage.endEditing()
+        coordinator.isUpdatingFromSwiftUI = false
+        textView.needsDisplay = true
     }
 
     class Coordinator: NSObject, NSTextViewDelegate {

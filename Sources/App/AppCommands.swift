@@ -58,6 +58,24 @@ struct AppCommands: Commands {
             .keyboardShortcut("p", modifiers: .command)
         }
 
+        // MARK: - Find Menu
+
+        CommandGroup(after: .textEditing) {
+            Divider()
+
+            Button("Find") {
+                documentVM.findReplace.isVisible = true
+                documentVM.findReplace.showReplace = false
+            }
+            .keyboardShortcut("f", modifiers: .command)
+
+            Button("Find and Replace") {
+                documentVM.findReplace.isVisible = true
+                documentVM.findReplace.showReplace = true
+            }
+            .keyboardShortcut("f", modifiers: [.command, .option])
+        }
+
         // MARK: - Format Menu
 
         CommandMenu("Format") {

@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -12,6 +13,9 @@ class DocumentViewModel: ObservableObject {
             document.isDirty = true
             if !suppressRerender {
                 scheduleRerender()
+            }
+            if findReplace.isVisible {
+                performSearch()
             }
         }
     }
@@ -34,6 +38,9 @@ class DocumentViewModel: ObservableObject {
     @Published var sourceVisible: Bool = false
     /// Set to a heading anchor slug to trigger programmatic scroll in the preview
     @Published var scrollToAnchor: String?
+    let findReplace = FindReplaceState()
+    @Published var scrollToBlockId: String?
+
     @Published var editingBlockId: String? {
         didSet {
             // Cancel any deferred rerender from finishEditing — a new block took focus
@@ -70,6 +77,7 @@ class DocumentViewModel: ObservableObject {
     }
 
     private var suppressRerender = false
+    private var cancellables = Set<AnyCancellable>()
     private var rerenderWorkItem: DispatchWorkItem?
     /// Deferred rerender scheduled by finishEditing — cancelled if another block takes focus
     private var pendingFinishRerenderWorkItem: DispatchWorkItem?
@@ -84,6 +92,21 @@ class DocumentViewModel: ObservableObject {
         // Initial render
         let renderer = MarkupRenderer(stylesheet: .default)
         self.styledBlocks = renderer.render(source: doc.sourceText)
+
+        // Subscribe to search query and case sensitivity changes
+        findReplace.$searchQuery
+            .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
+            .sink { [weak self] _ in self?.performSearch() }
+            .store(in: &cancellables)
+
+        findReplace.$isCaseSensitive
+            .sink { [weak self] _ in self?.performSearch() }
+            .store(in: &cancellables)
+
+        // Forward findReplace changes so SwiftUI rerenders blocks with highlights
+        findReplace.objectWillChange
+            .sink { [weak self] in self?.objectWillChange.send() }
+            .store(in: &cancellables)
     }
 
     /// Re-render after source text changes (debounced)
@@ -429,6 +452,206 @@ class DocumentViewModel: ObservableObject {
         suppressRerender = false
         document.isDirty = false
         rerender()
+    }
+
+    // MARK: - Find & Replace
+
+    /// Search sourceText for all occurrences of the query
+    func performSearch() {
+        let query = findReplace.searchQuery
+        guard !query.isEmpty else {
+            findReplace.matches = []
+            findReplace.currentMatchIndex = 0
+            return
+        }
+
+        let options: String.CompareOptions = findReplace.isCaseSensitive ? [] : [.caseInsensitive]
+        var results: [Range<String.Index>] = []
+        var searchStart = sourceText.startIndex
+
+        while searchStart < sourceText.endIndex,
+              let range = sourceText.range(of: query, options: options, range: searchStart..<sourceText.endIndex) {
+            results.append(range)
+            searchStart = range.upperBound
+        }
+
+        findReplace.matches = results
+        if findReplace.currentMatchIndex >= results.count {
+            findReplace.currentMatchIndex = max(results.count - 1, 0)
+        }
+    }
+
+    /// Replace the match at the current index
+    func replaceCurrent() {
+        guard findReplace.currentMatchIndex < findReplace.matches.count else { return }
+        let range = findReplace.matches[findReplace.currentMatchIndex]
+        sourceText.replaceSubrange(range, with: findReplace.replacementText)
+    }
+
+    /// Replace all matches (in reverse order to preserve indices)
+    func replaceAll() {
+        guard !findReplace.matches.isEmpty else { return }
+        var text = sourceText
+        for range in findReplace.matches.reversed() {
+            text.replaceSubrange(range, with: findReplace.replacementText)
+        }
+        sourceText = text
+    }
+
+    /// Navigate to the next match and scroll to it
+    func navigateToNextMatch() {
+        findReplace.nextMatch()
+        scrollToCurrentMatch()
+    }
+
+    /// Navigate to the previous match and scroll to it
+    func navigateToPreviousMatch() {
+        findReplace.previousMatch()
+        scrollToCurrentMatch()
+    }
+
+    /// Scroll the preview to the block containing the current match
+    func scrollToCurrentMatch() {
+        guard findReplace.currentMatchIndex < findReplace.matches.count else { return }
+        let matchRange = findReplace.matches[findReplace.currentMatchIndex]
+        let matchOffset = sourceText.distance(from: sourceText.startIndex, to: matchRange.lowerBound)
+
+        // Convert offset to line number (1-indexed)
+        var line = 1
+        var count = 0
+        for ch in sourceText {
+            if count >= matchOffset { break }
+            if ch == "\n" { line += 1 }
+            count += 1
+        }
+
+        // Find the block whose source position contains this line
+        if let blockId = findBlockContainingLine(line, in: styledBlocks) {
+            scrollToBlockId = blockId
+        }
+    }
+
+    /// Recursively find the block containing the given source line
+    private func findBlockContainingLine(_ line: Int, in blocks: [StyledBlock]) -> String? {
+        for block in blocks {
+            if let pos = block.sourcePosition,
+               line >= pos.startLine && line <= pos.endLine {
+                // Check children for a more specific match
+                switch block.content {
+                case .children(let children), .listItem(_, let children):
+                    if let childId = findBlockContainingLine(line, in: children) {
+                        return childId
+                    }
+                default:
+                    break
+                }
+                return block.id
+            }
+        }
+        return nil
+    }
+
+    /// Compute highlight ranges for a block's rendered text based on the current search query.
+    /// Returns an array of (NSRange, isCurrent) tuples for highlighting in EditableBlockTextView.
+    func highlightRangesInRenderedText(for block: StyledBlock) -> [(range: NSRange, isCurrent: Bool)] {
+        let query = findReplace.searchQuery
+        guard findReplace.isVisible, !query.isEmpty else { return [] }
+
+        // Extract the block's plain text from its content
+        let blockText = plainText(for: block)
+        guard !blockText.isEmpty else { return [] }
+
+        let options: String.CompareOptions = findReplace.isCaseSensitive ? [] : [.caseInsensitive]
+        var highlights: [(range: NSRange, isCurrent: Bool)] = []
+        var searchStart = blockText.startIndex
+
+        // Track which global match this block's local matches correspond to
+        let blockSourceRange = sourceRangeForBlock(block)
+
+        while searchStart < blockText.endIndex,
+              let range = blockText.range(of: query, options: options, range: searchStart..<blockText.endIndex) {
+            let nsRange = NSRange(range, in: blockText)
+
+            // Determine if this local match is the current global match
+            let isCurrent = isCurrentGlobalMatch(localRange: range, blockText: blockText, blockSourceRange: blockSourceRange)
+
+            highlights.append((range: nsRange, isCurrent: isCurrent))
+            searchStart = range.upperBound
+        }
+
+        return highlights
+    }
+
+    /// Extract plain text from a block's content
+    private func plainText(for block: StyledBlock) -> String {
+        switch block.content {
+        case .inline(let runs):
+            return runs.map(\.text).joined()
+        case .code(_, let text):
+            return text
+        default:
+            return ""
+        }
+    }
+
+    /// Get the source text range for a block
+    private func sourceRangeForBlock(_ block: StyledBlock) -> Range<String.Index>? {
+        guard let pos = block.sourcePosition,
+              let start = sourceIndex(line: pos.startLine, column: pos.startColumn),
+              let end = sourceIndex(line: pos.endLine, column: pos.endColumn) else {
+            return nil
+        }
+        return start..<end
+    }
+
+    /// Check if a local match in a block's rendered text corresponds to the current global match
+    private func isCurrentGlobalMatch(localRange: Range<String.Index>, blockText: String, blockSourceRange: Range<String.Index>?) -> Bool {
+        guard findReplace.currentMatchIndex < findReplace.matches.count,
+              let blockSourceRange = blockSourceRange else { return false }
+
+        let currentGlobalMatch = findReplace.matches[findReplace.currentMatchIndex]
+
+        // Check if the current global match falls within this block's source range
+        guard currentGlobalMatch.lowerBound >= blockSourceRange.lowerBound,
+              currentGlobalMatch.upperBound <= blockSourceRange.upperBound else {
+            return false
+        }
+
+        // The source text includes markdown syntax, so offsets won't match exactly.
+        // Instead, count which occurrence of the query this is in both source and rendered text.
+        let query = findReplace.searchQuery
+        let options: String.CompareOptions = findReplace.isCaseSensitive ? [] : [.caseInsensitive]
+
+        // Count which occurrence this local match is
+        var localOccurrence = 0
+        var searchPos = blockText.startIndex
+        while searchPos < localRange.lowerBound,
+              let found = blockText.range(of: query, options: options, range: searchPos..<blockText.endIndex) {
+            if found.lowerBound < localRange.lowerBound {
+                localOccurrence += 1
+                searchPos = found.upperBound
+            } else {
+                break
+            }
+        }
+
+        // Count which occurrence the global match is within the block's source
+        let blockSource = String(sourceText[blockSourceRange])
+        var globalOccurrence = 0
+        searchPos = blockSource.startIndex
+        let globalMatchInBlockOffset = sourceText.distance(from: blockSourceRange.lowerBound, to: currentGlobalMatch.lowerBound)
+        let globalMatchInBlockStart = blockSource.index(blockSource.startIndex, offsetBy: globalMatchInBlockOffset)
+        while searchPos < globalMatchInBlockStart,
+              let found = blockSource.range(of: query, options: options, range: searchPos..<blockSource.endIndex) {
+            if found.lowerBound < globalMatchInBlockStart {
+                globalOccurrence += 1
+                searchPos = found.upperBound
+            } else {
+                break
+            }
+        }
+
+        return localOccurrence == globalOccurrence
     }
 
     // MARK: - Anchor Navigation

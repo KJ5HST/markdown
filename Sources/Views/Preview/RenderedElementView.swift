@@ -70,7 +70,8 @@ struct RenderedElementView: View {
             },
             onNavigateUp: { documentVM.navigateToPreviousBlock(from: block.id) },
             onNavigateDown: { documentVM.navigateToNextBlock(from: block.id) },
-            onAnchorTap: { anchor in documentVM.scrollToAnchor = anchor }
+            onAnchorTap: { anchor in documentVM.scrollToAnchor = anchor },
+            highlightRanges: documentVM.highlightRangesInRenderedText(for: block)
         )
     }
 
@@ -120,7 +121,8 @@ struct RenderedElementView: View {
                 },
                 onBlur: { documentVM.finishEditing(blockId: block.id) },
                 onNavigateUp: { documentVM.navigateToPreviousBlock(from: block.id) },
-                onNavigateDown: { documentVM.navigateToNextBlock(from: block.id) }
+                onNavigateDown: { documentVM.navigateToNextBlock(from: block.id) },
+                highlightRanges: documentVM.highlightRangesInRenderedText(for: block)
             )
 
             if let language, !language.isEmpty {

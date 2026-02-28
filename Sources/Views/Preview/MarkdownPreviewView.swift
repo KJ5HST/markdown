@@ -26,6 +26,13 @@ struct MarkdownPreviewView: View {
                     }
                 }
             }
+            .onChange(of: documentVM.scrollToBlockId) { _, blockId in
+                guard let blockId else { return }
+                documentVM.scrollToBlockId = nil
+                withAnimation {
+                    proxy.scrollTo(blockId, anchor: .center)
+                }
+            }
         }
         .background(documentVM.stylesheet.pageBackgroundColor?.color ?? Color.white)
     }

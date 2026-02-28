@@ -22,6 +22,14 @@ struct ContentView: View {
                     MarkdownPreviewView()
                         .environmentObject(documentVM)
                         .frame(height: previewHeight)
+                        .overlay(alignment: .top) {
+                            if documentVM.findReplace.isVisible {
+                                FindBarView()
+                                    .environmentObject(documentVM)
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                            }
+                        }
+                        .animation(.easeInOut(duration: 0.15), value: documentVM.findReplace.isVisible)
 
                 // Draggable divider
                 ZStack {
