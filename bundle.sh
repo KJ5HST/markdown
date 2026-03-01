@@ -108,12 +108,106 @@ PLIST
 # Write PkgInfo
 echo -n "APPL????" > "$BUNDLE_DIR/Contents/PkgInfo"
 
+# --- Quick Look Preview Extension ---
+echo "Building Quick Look extension..."
+
+EXTENSION_NAME="MarkdownPreview"
+EXTENSION_DIR="$BUNDLE_DIR/Contents/PlugIns/$EXTENSION_NAME.appex"
+EXTENSION_SOURCES="$PROJECT_DIR/QuickLookExtension"
+
+mkdir -p "$EXTENSION_DIR/Contents/MacOS"
+
+# Compile extension
+swiftc \
+    "$EXTENSION_SOURCES/MarkdownToHTML.swift" \
+    "$EXTENSION_SOURCES/PreviewViewController.swift" \
+    -parse-as-library \
+    -module-name "$EXTENSION_NAME" \
+    -application-extension \
+    -Xlinker -e -Xlinker _NSExtensionMain \
+    -target arm64-apple-macosx15.0 \
+    -o "$EXTENSION_DIR/Contents/MacOS/$EXTENSION_NAME" \
+    2>&1
+
+# Write extension Info.plist
+cat > "$EXTENSION_DIR/Contents/Info.plist" << 'EXTPLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>MarkdownPreview</string>
+    <key>CFBundleDisplayName</key>
+    <string>Markdown Preview</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.terrell.markdown.quicklook</string>
+    <key>CFBundleVersion</key>
+    <string>1.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleExecutable</key>
+    <string>MarkdownPreview</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.quicklook.preview</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>MarkdownPreview.PreviewProvider</string>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>QLIsDataBasedPreview</key>
+            <true/>
+            <key>QLSupportedContentTypes</key>
+            <array>
+                <string>net.daringfireball.markdown</string>
+            </array>
+        </dict>
+    </dict>
+</dict>
+</plist>
+EXTPLIST
+
+# Write extension PkgInfo
+echo -n "XPC!????" > "$EXTENSION_DIR/Contents/PkgInfo"
+
+# Write extension entitlements
+EXTENSION_ENTITLEMENTS="$BUILD_DIR/extension.entitlements"
+cat > "$EXTENSION_ENTITLEMENTS" << 'ENTITLEMENTS'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.files.user-selected.read-only</key>
+    <true/>
+</dict>
+</plist>
+ENTITLEMENTS
+
+# Code sign inside-out: extension first (with entitlements), then app
+echo "Code signing..."
+codesign --force --sign - --entitlements "$EXTENSION_ENTITLEMENTS" "$EXTENSION_DIR"
+codesign --force --sign - "$BUNDLE_DIR"
+
 echo ""
 echo "App bundle created at:"
 echo "  $BUNDLE_DIR"
 echo ""
 echo "To install, run:"
 echo "  cp -r \"$BUNDLE_DIR\" /Applications/"
+echo ""
+echo "After installing, reset the Quick Look cache:"
+echo "  qlmanage -r"
+echo ""
+echo "To test Quick Look:"
+echo "  qlmanage -p README.md"
 echo ""
 echo "To set as default for .md files:"
 echo "  Right-click any .md file → Get Info → Open with → Mark Down → Change All"
