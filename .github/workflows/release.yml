@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build app bundle
+        run: bash bundle.sh
+
+      - name: Create DMG
+        run: |
+          DMG_NAME="Mark-Down-${GITHUB_REF_NAME}.dmg"
+          hdiutil create -volname "Mark Down" -srcfolder ".build/Mark Down.app" -ov -format UDZO "$DMG_NAME"
+          echo "DMG_NAME=$DMG_NAME" >> "$GITHUB_ENV"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.DMG_NAME }}
+          generate_release_notes: true
