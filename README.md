@@ -1,3 +1,5 @@
+*Note: Claude can be sloppy if not closely managed. I have not done that with this project because I just wanted a decent markdown viewer and editor. Expect some gaps in coverage with tests, documentation, etc.*
+
 ![Mark Down](AppIcon.iconset/icon_32x32.png)
 
 # Mark Down
