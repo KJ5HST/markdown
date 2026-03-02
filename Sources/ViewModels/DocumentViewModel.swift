@@ -932,6 +932,23 @@ class DocumentViewModel: ObservableObject {
         loadDocument(from: url)
     }
 
+    /// If the document has unsaved changes, present a save alert; otherwise run the action immediately.
+    func withSaveCheck(then action: @escaping () -> Void) {
+        guard document.isDirty else {
+            action()
+            return
+        }
+        guard let window = NSApp.keyWindow ?? NSApp.mainWindow ?? NSApp.windows.first(where: { $0.isVisible }) else {
+            action()
+            return
+        }
+        showUnsavedChangesAlert(on: window, documentVM: self) { shouldProceed in
+            if shouldProceed {
+                action()
+            }
+        }
+    }
+
     /// Save current document
     func saveDocument() {
         if let url = document.fileURL {

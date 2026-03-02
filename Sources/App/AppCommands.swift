@@ -8,14 +8,18 @@ struct AppCommands: Commands {
 
         CommandGroup(replacing: .newItem) {
             Button("New") {
-                documentVM.newDocument()
+                documentVM.withSaveCheck {
+                    documentVM.newDocument()
+                }
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("Open...") {
-                DocumentStorage.openMarkdownFile { url in
-                    guard let url = url else { return }
-                    documentVM.loadDocument(from: url)
+                documentVM.withSaveCheck {
+                    DocumentStorage.openMarkdownFile { url in
+                        guard let url = url else { return }
+                        documentVM.loadDocument(from: url)
+                    }
                 }
             }
             .keyboardShortcut("o", modifiers: .command)
