@@ -96,6 +96,8 @@ struct WindowAccessor: NSViewRepresentable {
         view.setFrameSize(.zero)
         DispatchQueue.main.async {
             guard let window = view.window else { return }
+            // Preserve SwiftUI's internal delegate and chain to it
+            context.coordinator.originalDelegate = window.delegate
             window.delegate = context.coordinator
             window.isDocumentEdited = self.isDocumentEdited
         }
@@ -107,8 +109,11 @@ struct WindowAccessor: NSViewRepresentable {
     }
 }
 
+/// Intercepts windowShouldClose to check for unsaved changes, forwarding
+/// all other delegate messages to SwiftUI's original window delegate.
 class WindowCloseDelegate: NSObject, NSWindowDelegate {
     let documentVM: DocumentViewModel
+    weak var originalDelegate: NSWindowDelegate?
     private var allowClose = false
 
     init(documentVM: DocumentViewModel) {
@@ -127,6 +132,19 @@ class WindowCloseDelegate: NSObject, NSWindowDelegate {
         }
 
         return false
+    }
+
+    // Forward everything else to SwiftUI's original delegate
+    override func responds(to aSelector: Selector!) -> Bool {
+        if super.responds(to: aSelector) { return true }
+        return originalDelegate?.responds(to: aSelector) ?? false
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        if let original = originalDelegate, original.responds(to: aSelector) {
+            return original
+        }
+        return super.forwardingTarget(for: aSelector)
     }
 }
 
