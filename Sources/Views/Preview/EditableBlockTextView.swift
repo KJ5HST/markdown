@@ -13,6 +13,7 @@ struct EditableBlockTextView: NSViewRepresentable {
     let onSelectionChange: ((EditableNSTextView) -> Void)?
     let onNavigateUp: (() -> Void)?
     let onNavigateDown: (() -> Void)?
+    let onSplitBlock: ((Int) -> Void)?
     let onAnchorTap: ((String) -> Void)?
     let highlightRanges: [(range: NSRange, isCurrent: Bool)]
 
@@ -26,6 +27,7 @@ struct EditableBlockTextView: NSViewRepresentable {
         onSelectionChange: ((EditableNSTextView) -> Void)? = nil,
         onNavigateUp: (() -> Void)? = nil,
         onNavigateDown: (() -> Void)? = nil,
+        onSplitBlock: ((Int) -> Void)? = nil,
         onAnchorTap: ((String) -> Void)? = nil,
         highlightRanges: [(range: NSRange, isCurrent: Bool)] = []
     ) {
@@ -38,6 +40,7 @@ struct EditableBlockTextView: NSViewRepresentable {
         self.onSelectionChange = onSelectionChange
         self.onNavigateUp = onNavigateUp
         self.onNavigateDown = onNavigateDown
+        self.onSplitBlock = onSplitBlock
         self.onAnchorTap = onAnchorTap
         self.highlightRanges = highlightRanges
     }
@@ -49,7 +52,8 @@ struct EditableBlockTextView: NSViewRepresentable {
             onBlur: onBlur,
             onSelectionChange: onSelectionChange,
             onNavigateUp: onNavigateUp,
-            onNavigateDown: onNavigateDown
+            onNavigateDown: onNavigateDown,
+            onSplitBlock: onSplitBlock
         )
     }
 
@@ -212,6 +216,7 @@ struct EditableBlockTextView: NSViewRepresentable {
         let onSelectionChange: ((EditableNSTextView) -> Void)?
         let onNavigateUp: (() -> Void)?
         let onNavigateDown: (() -> Void)?
+        let onSplitBlock: ((Int) -> Void)?
         var isEditing = false
         /// True after user has typed — prevents updateNSView from resetting text
         /// before the rerender catches up with fresh data.
@@ -226,7 +231,8 @@ struct EditableBlockTextView: NSViewRepresentable {
             onBlur: @escaping () -> Void,
             onSelectionChange: ((EditableNSTextView) -> Void)?,
             onNavigateUp: (() -> Void)?,
-            onNavigateDown: (() -> Void)?
+            onNavigateDown: (() -> Void)?,
+            onSplitBlock: ((Int) -> Void)?
         ) {
             self.onTextChange = onTextChange
             self.onFocus = onFocus
@@ -234,6 +240,7 @@ struct EditableBlockTextView: NSViewRepresentable {
             self.onSelectionChange = onSelectionChange
             self.onNavigateUp = onNavigateUp
             self.onNavigateDown = onNavigateDown
+            self.onSplitBlock = onSplitBlock
         }
 
         /// Called when NSTextView becomes first responder (before any typing)
@@ -276,10 +283,15 @@ struct EditableBlockTextView: NSViewRepresentable {
         }
 
         func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
-            // In non-code blocks, Enter ends editing (commits the block)
+            // In non-code blocks, Enter splits the block (or ends editing if no split handler)
             if commandSelector == #selector(NSResponder.insertNewline(_:)) {
                 if let editable = textView as? EditableNSTextView, !editable.isCodeBlock {
-                    textView.window?.makeFirstResponder(nil)
+                    if let onSplitBlock = onSplitBlock {
+                        let cursorPosition = textView.selectedRange().location
+                        onSplitBlock(cursorPosition)
+                    } else {
+                        textView.window?.makeFirstResponder(nil)
+                    }
                     return true
                 }
             }

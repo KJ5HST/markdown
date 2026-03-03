@@ -70,6 +70,7 @@ struct RenderedElementView: View {
             },
             onNavigateUp: { documentVM.navigateToPreviousBlock(from: block.id) },
             onNavigateDown: { documentVM.navigateToNextBlock(from: block.id) },
+            onSplitBlock: { offset in documentVM.splitBlock(block, atOffset: offset) },
             onAnchorTap: { anchor in documentVM.scrollToAnchor = anchor },
             highlightRanges: documentVM.highlightRangesInRenderedText(for: block)
         )

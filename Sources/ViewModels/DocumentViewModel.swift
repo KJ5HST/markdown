@@ -768,6 +768,110 @@ class DocumentViewModel: ObservableObject {
         return nil
     }
 
+    // MARK: - Block Splitting
+
+    /// Split a block at the given cursor offset.
+    /// - At end: navigate to next editable block (or end editing)
+    /// - At beginning: navigate to previous editable block (or end editing)
+    /// - In middle: split into two blocks, focus the second
+    func splitBlock(_ block: StyledBlock, atOffset offset: Int) {
+        // Only split top-level blocks (not nested inside lists/blockquotes)
+        if let result = findBlockWithParent(id: block.id, in: styledBlocks),
+           result.parent != nil {
+            // Nested block — just end editing
+            activeTextView?.window?.makeFirstResponder(nil)
+            return
+        }
+
+        guard let textView = activeTextView,
+              let textStorage = textView.textStorage else { return }
+
+        let textLength = textStorage.length
+
+        // Cursor at end → navigate to next block
+        if offset >= textLength {
+            let ids = flatEditableBlockIds()
+            if let index = ids.firstIndex(of: block.id), index < ids.count - 1 {
+                focusBlock(id: ids[index + 1], atEnd: false)
+            } else {
+                textView.window?.makeFirstResponder(nil)
+            }
+            return
+        }
+
+        // Cursor at beginning → navigate to previous block
+        if offset <= 0 {
+            let ids = flatEditableBlockIds()
+            if let index = ids.firstIndex(of: block.id), index > 0 {
+                focusBlock(id: ids[index - 1], atEnd: true)
+            } else {
+                textView.window?.makeFirstResponder(nil)
+            }
+            return
+        }
+
+        // Middle — split the block
+        let beforeAttr = textStorage.attributedSubstring(from: NSRange(location: 0, length: offset))
+        let afterAttr = textStorage.attributedSubstring(from: NSRange(location: offset, length: textLength - offset))
+
+        let beforeMd = MarkdownReconstructor.reconstruct(beforeAttr, elementType: block.elementType)
+        // Second half always becomes a paragraph (standard editor behavior for headings)
+        let afterMd = MarkdownReconstructor.reconstruct(afterAttr, elementType: .paragraph)
+
+        let combinedMd = beforeMd + "\n\n" + afterMd
+        let window = textView.window
+
+        // Compute the source line where the new paragraph will start
+        let pos = liveSourcePositions[block.id] ?? block.sourcePosition
+        let newBlockStartLine: Int?
+        if let startLine = pos?.startLine {
+            // Count lines in beforeMd + the two newlines
+            let linesInBefore = beforeMd.filter { $0 == "\n" }.count
+            newBlockStartLine = startLine + linesInBefore + 2
+        } else {
+            newBlockStartLine = nil
+        }
+
+        // Update source, clear editing state, rerender
+        updateBlockSource(block, newMarkdown: combinedMd)
+        editingBlockId = nil
+        liveSourcePositions.removeAll()
+        selectionSyntaxStack = []
+        activeTextView = nil
+        rerender()
+
+        // After rerender, find and focus the new block
+        guard let newStartLine = newBlockStartLine,
+              let window = window,
+              let contentView = window.contentView else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self = self else { return }
+            if let newBlock = self.findBlockAtSourceLine(newStartLine, in: self.styledBlocks),
+               let targetView = self.findTextView(blockId: newBlock.id, in: contentView) {
+                self.editingBlockId = newBlock.id
+                window.makeFirstResponder(targetView)
+                targetView.setSelectedRange(NSRange(location: 0, length: 0))
+            }
+        }
+    }
+
+    /// Find the first block whose sourcePosition.startLine matches the given line
+    private func findBlockAtSourceLine(_ line: Int, in blocks: [StyledBlock]) -> StyledBlock? {
+        for block in blocks {
+            if let pos = block.sourcePosition, pos.startLine == line {
+                return block
+            }
+            switch block.content {
+            case .children(let children), .listItem(_, let children):
+                if let found = findBlockAtSourceLine(line, in: children) { return found }
+            default:
+                break
+            }
+        }
+        return nil
+    }
+
     // MARK: - PDF Export & Print
 
     private let exportMargin: CGFloat = 54   // 3/4 inch
