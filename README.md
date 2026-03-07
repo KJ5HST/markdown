@@ -1,3 +1,7 @@
+**DEPRECATED**
+*This project was a POC that did not live upto expectations. Use the [mark-down](https://github.com/KJ5HST/mark-down) project instead.*
+
+
 *Note: This is not great, but I like it better than MacDown at this point. Claude can be sloppy if not closely managed. I have not done that with this project because I just wanted a decent markdown viewer and editor. Expect some gaps in coverage with tests, documentation, etc. Also, Claude kinda sucks at doing Swift. I don't currently know if it is any good with Objective C (it's alright with iOS apps, though).*
 
 ![Mark Down](AppIcon.iconset/icon_32x32.png)
